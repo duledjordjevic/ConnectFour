@@ -23,6 +23,7 @@ bool winningMove(vector<vector<int> >&, unsigned int);
 int scoreSet(vector<unsigned int>, unsigned int);
 int tabScore(vector<vector<int> >, unsigned int);
 array<int, 2> miniMax(vector<vector<int> >&, unsigned int, int, int, unsigned int);
+array<int, 2> miniMaxParallel(vector<vector<int> >& b, unsigned int d, int alf, int bet, unsigned int p);
 int heurFunction(unsigned int, unsigned int, unsigned int);
 
 // I'll be real and say this is just to avoid magic numbers
@@ -124,7 +125,7 @@ int userMove() {
  */
 int aiMove() {
 	cout << "AI is thinking about a move..." << endl;
-	return miniMax(board, MAX_DEPTH, 0 - INT_MAX, INT_MAX, COMPUTER)[1];
+	return miniMaxParallel(board, MAX_DEPTH, 0 - INT_MAX, INT_MAX, COMPUTER)[1];
 }
 
 /**
@@ -186,6 +187,60 @@ array<int, 2> miniMax(vector<vector<int> >& b, unsigned int d, int alf, int bet,
 				if (alf >= bet) { break; }
 			}
 		}
+		return moveSoFar;
+	}
+}
+
+array<int, 2> miniMaxParallel(vector<vector<int> >& b, unsigned int d, int alf, int bet, unsigned int p) {
+	if (d == 0 || d >= (NUM_COL * NUM_ROW) - turns) {
+		return array<int, 2>{tabScore(b, COMPUTER), -1};
+	}
+	if (p == COMPUTER) {
+		array<int, 2> moveSoFar = { INT_MIN, -1 };
+		if (winningMove(b, PLAYER)) {
+			return moveSoFar;
+		}
+		tbb::task_group tasks;
+		for (unsigned int c = 0; c < NUM_COL; c++) {
+			if (b[NUM_ROW - 1][c] == 0) {
+				tasks.run([&, c]() {
+					vector<vector<int> > newBoard = copyBoard(b);
+					makeMove(newBoard, c, p);
+					int score = miniMaxParallel(newBoard, d - 1, alf, bet, PLAYER)[0];
+					tbb::task_group_context().cancel_group_execution(); // Cancel other tasks if a winning move is found
+					if (score > moveSoFar[0]) {
+						moveSoFar = { score, static_cast<int>(c) };
+					}
+					alf = max(alf, moveSoFar[0]);
+					if (alf >= bet) { tasks.cancel(); } // For pruning
+					});
+			}
+		}
+		tasks.wait();
+		return moveSoFar;
+	}
+	else {
+		array<int, 2> moveSoFar = { INT_MAX, -1 };
+		if (winningMove(b, COMPUTER)) {
+			return moveSoFar;
+		}
+		tbb::task_group tasks;
+		for (unsigned int c = 0; c < NUM_COL; c++) {
+			if (b[NUM_ROW - 1][c] == 0) {
+				tasks.run([&, c]() {
+					vector<vector<int> > newBoard = copyBoard(b);
+					makeMove(newBoard, c, p);
+					int score = miniMaxParallel(newBoard, d - 1, alf, bet, COMPUTER)[0];
+					tbb::task_group_context().cancel_group_execution(); // Cancel other tasks if a winning move is found
+					if (score < moveSoFar[0]) {
+						moveSoFar = { score, static_cast<int>(c) };
+					}
+					bet = min(bet, moveSoFar[0]);
+					if (alf >= bet) { tasks.cancel(); }
+					});
+			}
+		}
+		tasks.wait();
 		return moveSoFar;
 	}
 }
