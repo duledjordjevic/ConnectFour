@@ -6,6 +6,8 @@
 #include <array>
 #include <sstream>
 #include <tbb/tbb.h>
+#include "tbb/task_group.h"
+#include <tbb/tick_count.h>
 #include <chrono>
 #define min(a,b) (((a) < (b)) ? (a) : (b))
 #define max(a,b) (((a) > (b)) ? (a) : (b))
@@ -27,11 +29,11 @@ array<int, 2> miniMaxParallel(vector<vector<int> >& b, unsigned int d, int alf, 
 int heurFunction(unsigned int, unsigned int, unsigned int);
 
 // I'll be real and say this is just to avoid magic numbers
-unsigned int NUM_COL = 7; // how wide is the board
-unsigned int NUM_ROW = 6; // how tall
+unsigned int NUM_COL = 15; // how wide is the board
+unsigned int NUM_ROW = 15; // how tall
 unsigned int PLAYER = 1; // player number
 unsigned int COMPUTER = 2; // AI number
-unsigned int MAX_DEPTH = 5; // the default "difficulty" of the computer controlled AI
+unsigned int MAX_DEPTH = 4; // the default "difficulty" of the computer controlled AI
 
 bool gameOver = false; // flag for if game is over
 unsigned int turns = 0; // count for # turns
@@ -251,16 +253,12 @@ array<int, 2> miniMaxParallel(vector<vector<int> >& b, unsigned int d, int alf, 
  * @param p - the player to check score of
  * @return - the board score
  */
-int tabScore(vector<vector<int> > b, unsigned int p) {
-	int score = 0;
+
+int horizontalCheck( int row,int rowEnd, vector<vector<int> >& b, unsigned int p) {
 	vector<unsigned int> rs(NUM_COL);
-	vector<unsigned int> cs(NUM_ROW);
 	vector<unsigned int> set(4);
-	/**
-	 * horizontal checks, we're looking for sequences of 4
-	 * containing any combination of AI, PLAYER, and empty pieces
-	 */
-	for (unsigned int r = 0; r < NUM_ROW; r++) {
+	int score = 0;
+	for (unsigned int r = row; r < rowEnd; r++) {
 		for (unsigned int c = 0; c < NUM_COL; c++) {
 			rs[c] = b[r][c]; // this is a distinct row alone
 		}
@@ -271,8 +269,13 @@ int tabScore(vector<vector<int> > b, unsigned int p) {
 			score += scoreSet(set, p); // find score
 		}
 	}
-	// vertical
-	for (unsigned int c = 0; c < NUM_COL; c++) {
+	return score;
+}
+int verticalCheck(int row, int rowEnd, vector<vector<int> >& b, unsigned int p) {
+	vector<unsigned int> cs(NUM_ROW);
+	vector<unsigned int> set(4);
+	int score = 0;
+	for (unsigned int c = row; c < rowEnd; c++) {
 		for (unsigned int r = 0; r < NUM_ROW; r++) {
 			cs[r] = b[r][c];
 		}
@@ -283,7 +286,58 @@ int tabScore(vector<vector<int> > b, unsigned int p) {
 			score += scoreSet(set, p);
 		}
 	}
+	return score;
+}
+
+int tabScore(vector<vector<int> > b, unsigned int p) {
+	int score = 0;
+	vector<unsigned int> rs(NUM_COL);
+	vector<unsigned int> cs(NUM_ROW);
+	vector<unsigned int> set(4);
+	/**
+	 * horizontal checks, we're looking for sequences of 4
+	 * containing any combination of AI, PLAYER, and empty pieces
+	 */
+	//for (unsigned int r = 0; r < NUM_ROW; r++) {
+	//	for (unsigned int c = 0; c < NUM_COL; c++) {
+	//		rs[c] = b[r][c]; // this is a distinct row alone
+	//	}
+	//	for (unsigned int c = 0; c < NUM_COL - 3; c++) {
+	//		for (int i = 0; i < 4; i++) {
+	//			set[i] = rs[c + i]; // for each possible "set" of 4 spots from that row
+	//		}
+	//		score += scoreSet(set, p); // find score
+	//	}
+	//}
+	task_group tg;
+	int score1, score2, score3, score4;
+	tg.run([&] {score1 = horizontalCheck(0, 5,b, p); });
+	tg.run([&] {score2 = horizontalCheck(5, 10,b, p); });
+	tg.run([&] {score3 = horizontalCheck(10, 15, b, p); });
+	//tg.run([&] {score4 = horizontalCheck(15, 20,b, p); });
+	tg.wait();
+	score += score1+score2+score3;
+	// vertical
+	//for (unsigned int c = 0; c < NUM_COL; c++) {
+	//	for (unsigned int r = 0; r < NUM_ROW; r++) {
+	//		cs[r] = b[r][c];
+	//	}
+	//	for (unsigned int r = 0; r < NUM_ROW - 3; r++) {
+	//		for (int i = 0; i < 4; i++) {
+	//			set[i] = cs[r + i];
+	//		}
+	//		score += scoreSet(set, p);
+	//	}
+	//}
 	// diagonals
+	task_group tg1;
+	//int score5, score, score3, score4
+	tg1.run([&] {score1 = verticalCheck(0, 5, b, p); });
+	tg1.run([&] {score2 = verticalCheck(5, 10, b, p); });
+	tg1.run([&] {score3 = verticalCheck(10, 15, b, p); });
+	//tg1.run([&] {score4 = verticalCheck(15, 20, b, p); });
+	tg1.wait();
+	score += score1 + score2 + score3;
 	for (unsigned int r = 0; r < NUM_ROW - 3; r++) {
 		for (unsigned int c = 0; c < NUM_COL; c++) {
 			rs[c] = b[r][c];
